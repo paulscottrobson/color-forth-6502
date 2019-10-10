@@ -24,16 +24,16 @@ Constant_2Byte:
 		ply
 
 		.incya 								; advance pointer
-		sta 	zPage0 						; save address in zero page
-		sty 	zPage0+1
+		sta 	zTemp0 						; save address in zero page
+		sty 	zTemp0+1
 		.incya 								; advance pointer again.
 		phy 								; push it back
 		pha
 
 		ldy 	#1 							; load the constant into YA
-		lda 	(zPage0),y 
+		lda 	(zTemp0),y 
 		tay
-		lda 	(zPage0)
+		lda 	(zTemp0)
 		rts
 
 Constant_1Byte:
@@ -42,12 +42,12 @@ Constant_1Byte:
 		ply
 
 		.incya 								; advance pointer
-		sta 	zPage0 						; save address in zero page
-		sty 	zPage0+1
+		sta 	zTemp0 						; save address in zero page
+		sty 	zTemp0+1
 		phy 								; push it back
 		pha
 
-		lda 	(zPage0)
+		lda 	(zTemp0)
 		ldy 	#0
 		rts		
 

@@ -16,9 +16,9 @@
 ; ******************************************************************************
 
 Memory_ReadByte:	;; [c@]
-		sta 	zPage0 						; save address
-		sty 	zPage0+1
-		lda 	(zPage0) 					; load byte in.
+		sta 	zTemp0 						; save address
+		sty 	zTemp0+1
+		lda 	(zTemp0) 					; load byte in.
 		ldy 	#0
 		rts
 
@@ -29,12 +29,12 @@ Memory_ReadByte:	;; [c@]
 ; ******************************************************************************
 
 Memory_ReadWord:	;; [@]
-		sta 	zPage0 						; save address
-		sty 	zPage0+1
+		sta 	zTemp0 						; save address
+		sty 	zTemp0+1
 		ldy 	#1							; get high byte
-		lda 	(zPage0),y
+		lda 	(zTemp0),y
 		tay
-		lda 	(zPage0) 					; load low byte in.
+		lda 	(zTemp0) 					; load low byte in.
 		rts		
 
 ; ******************************************************************************
@@ -44,10 +44,10 @@ Memory_ReadWord:	;; [@]
 ; ******************************************************************************
 
 Memory_WriteByte:	;; [c!]
-		sta 	zPage0 						; save address
-		sty 	zPage0+1
+		sta 	zTemp0 						; save address
+		sty 	zTemp0+1
 		lda 	lStack,x 					; load byte in.
-		sta 	(zPage0)					; write it.
+		sta 	(zTemp0)					; write it.
 		.drop2 								; and drop the 2 stack values.
 		rts
 
@@ -58,13 +58,13 @@ Memory_WriteByte:	;; [c!]
 ; ******************************************************************************
 
 Memory_WriteWord:	;; [!]
-		sta 	zPage0 						; save address
-		sty 	zPage0+1
+		sta 	zTemp0 						; save address
+		sty 	zTemp0+1
 		lda 	hStack,x 					; load high byte in.
 		ldy 	#1
-		sta 	(zPage0),y					; write it.
+		sta 	(zTemp0),y					; write it.
 		lda 	lStack,x 					; load low byte in.
-		sta 	(zPage0)					; write it.
+		sta 	(zTemp0)					; write it.
 		.drop2 								; and drop the 2 stack values.
 		rts
 
@@ -75,17 +75,17 @@ Memory_WriteWord:	;; [!]
 ; ******************************************************************************
 
 Memory_AddWord:	;; [+!]
-		sta 	zPage0 						; save address
-		sty 	zPage0+1
+		sta 	zTemp0 						; save address
+		sty 	zTemp0+1
 		
 		clc
 		lda 	lStack,x 					; load low byte in.
-		adc 	(zPage0)					; add it
-		sta 	(zPage0)					; write it.
+		adc 	(zTemp0)					; add it
+		sta 	(zTemp0)					; write it.
 
 		ldy 	#1
 		lda 	hStack,x 					; load high byte in.
-		adc		(zPage0),y					; add it
-		sta 	(zPage0),y					; write it.
+		adc		(zTemp0),y					; add it
+		sta 	(zTemp0),y					; write it.
 		.drop2 								; and drop the 2 stack values.
 		rts

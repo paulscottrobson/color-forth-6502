@@ -72,6 +72,6 @@ drop2:	.macro
 ; ******************************************************************************
 				
 ferror:	.macro
-_		.byte $FF
+_		jsr 	ReportError
 		.text \1,0
 		.endm				

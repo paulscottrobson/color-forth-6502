@@ -55,7 +55,7 @@ XDictionaryReset:
 
 ; ******************************************************************************
 ;
-;		Search dictionary at zPage0 for text at SearchBuffer. 
+;		Search dictionary at zTemp0 for text at SearchBuffer. 
 ;
 ;		If found, return CS	address, bank, bits in data area.
 ;		If not found, CC.
@@ -68,7 +68,7 @@ XDictionarySearch:
 		;		Compare next element.
 		;
 _XDSLoop:
-		lda 	(zPage0)					; look at length
+		lda 	(zTemp0)					; look at length
 		clc 								; clear carry, return CC if failed.
 		beq		_XDSExit					; exit ?
 		;
@@ -78,7 +78,7 @@ _XDSLoop:
 		ldx 	#0 							; comparison starts in SearchBuffer
 _XDSCompare:
 		lda 	SearchBuffer,x 				; compare characters
-		cmp 	(zPage0),y
+		cmp 	(zTemp0),y
 		bne 	_XDSNext 					; did not match, try next.
 		;
 		inx 								; advance pointers
@@ -88,9 +88,9 @@ _XDSCompare:
 		;
 		;		Successful match
 		;
-		ldy 	#1 							; copy 1,2,3,4 to zPage
+		ldy 	#1 							; copy 1,2,3,4 to zTemp
 _XDSCopy:
-		lda 	(zPage0),y
+		lda 	(zTemp0),y
 		sta 	dictAddr-1,y
 		iny
 		cpy 	#5
@@ -101,12 +101,12 @@ _XDSCopy:
 		;		Go to next entry
 		;
 _XDSNext:
-		clc 								; add offset to zPage0
-		lda 	zPage0
-		adc 	(zPage0)
-		sta 	zPage0
+		clc 								; add offset to zTemp0
+		lda 	zTemp0
+		adc 	(zTemp0)
+		sta 	zTemp0
 		bcc 	_XDSLoop 					; no carry
-		inc 	zPage0+1 					; carry forward.
+		inc 	zTemp0+1 					; carry forward.
 		bra 	_XDSLoop		
 		;
 		;		Exit dictionary search.

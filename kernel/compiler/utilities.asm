@@ -19,15 +19,15 @@
 UtilSearchAll:
 		lda 	#DictionaryBase & $FF		; search the user dictionary
 		ldx 	#DictionaryBase >> 8
-		sta 	zPage0
-		stx 	zPage0+1
+		sta 	zTemp0
+		stx 	zTemp0+1
 		jsr 	DictionarySearch
 		bcs 	_BSAExit
 		;
 		lda 	#KernelDictionary & $FF		; search the system dictionary
 		ldx 	#KernelDictionary >> 8
-		sta 	zPage0
-		stx 	zPage0+1
+		sta 	zTemp0
+		stx 	zTemp0+1
 		jsr 	DictionarySearch
 _BSAExit:		
 		rts
@@ -40,12 +40,12 @@ _BSAExit:
 ; ******************************************************************************
 
 UtilConvertInteger:
-		stz 	zPage0 						; zero the result
-		stz 	zPage0+1 					
+		stz 	zTemp0 						; zero the result
+		stz 	zTemp0+1 					
 		ldx 	#255 						; start position-1
 _BCILoop:
 		inx 								; next character
-		jsr 	UtilTimes10 				; zPage0 x 10
+		jsr 	UtilTimes10 				; zTemp0 x 10
 		;
 		lda 	SearchBuffer,x 				; look at character
 		and 	#$7F  						; drop end character bit
@@ -55,10 +55,10 @@ _BCILoop:
 		bcs 	_BCIFail
 		and 	#15 						; now constant 0-9
 		clc 								; add to current
-		adc 	zPage0
-		sta 	zPage0
+		adc 	zTemp0
+		sta 	zTemp0
 		bcc 	_BCINoCarry
-		inc 	zPage0+1
+		inc 	zTemp0+1
 _BCINoCarry:
 		lda 	SearchBuffer,x 				; check if was last character
 		bmi 	_BCISucceed 				; if so, then it's okay.
@@ -69,16 +69,16 @@ _BCINoCarry:
 _BCINegateExit:								; it's a negative number.		
 		sec
 		lda 	#0 							; do the arithmetic adjustment
-		sbc 	zPage0
-		sta 	zPage0
+		sbc 	zTemp0
+		sta 	zTemp0
 		lda 	#0
-		sbc 	zPage0+1
-		sta 	zPage0+1
+		sbc 	zTemp0+1
+		sta 	zTemp0+1
 		;
 _BCISucceed: 								; done, return in YA and CS
 		sec
-		lda 	zPage0
-		ldy 	zPage0+1
+		lda 	zTemp0
+		ldy 	zTemp0+1
 		rts
 
 _BCIFail:
@@ -87,25 +87,25 @@ _BCIFail:
 
 ; ******************************************************************************
 ;
-;								Multiply ZPage by 10
+;								Multiply zTemp by 10
 ;
 ; ******************************************************************************
 
 UtilTimes10:
-		lda 	zPage0+1 					; save in YA
+		lda 	zTemp0+1 					; save in YA
 		tay
-		lda 	zPage0
-		asl 	zPage0 						; x 4
-		rol 	zPage0+1		
-		asl 	zPage0
-		rol 	zPage0+1		
-		adc 	zPage0 						; add YA value gives x 5
-		sta 	zPage0
+		lda 	zTemp0
+		asl 	zTemp0 						; x 4
+		rol 	zTemp0+1		
+		asl 	zTemp0
+		rol 	zTemp0+1		
+		adc 	zTemp0 						; add YA value gives x 5
+		sta 	zTemp0
 		tya
-		adc 	zPage0+1
-		sta 	zPage0+1
-		asl 	zPage0	 					; x 10
-		rol 	zPage0+1		
+		adc 	zTemp0+1
+		sta 	zTemp0+1
+		asl 	zTemp0	 					; x 10
+		rol 	zTemp0+1		
 		rts
 
 ; ******************************************************************************

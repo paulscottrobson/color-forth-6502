@@ -33,26 +33,14 @@ ColdStart:
 		stx 	CurrentIndex 				; save that state in 'current' variables
 		sta 	CurrentTOS 					; which is X (stack) and YA (top of stack)
 		sty 	CurrentTOS+1
-
+		stz 	ErrorBuffer 				; clear the error buffer.		
 		jsr 	XClearScreen
 
-		ldx 	#TestBuffer & $FF
-		ldy 	#TestBuffer >> 8		
-		jsr 	BufferProcess
-
-		lda 	#255
-x1:
-		jsr 	XPrint
-		dec 	a
-		bne 	x1
-h1:		bra 	h1
-
-		.include "testing/buffer.inc"
-
+		jmp 	CommandLine
+		
 		.include "compiler/macros.inc"
-
 		.include "system/extern.asm"
-
+		.include "compiler/cli.asm"
 		.include "compiler/buffer.asm"
 		.include "compiler/define.asm"
 		.include "compiler/execute.asm"
@@ -66,7 +54,6 @@ h1:		bra 	h1
 		.include "vocabulary/binary.voc"
 		.include "vocabulary/stack.voc"
 		.include "vocabulary/memory.voc"
-
 		.include "generated/dictionary.inc"
 
 ;

@@ -22,8 +22,8 @@ DTP_COMPILEONLY = $02 						; Bit 1 type (cannot be execute, only compiled)
 
 		* = $0010
 
-zPage0: .word ?								; temporary page zero pointers
-zPage1: .word ? 							; these must be consecutive.
+zTemp0: .word ?								; temporary page zero pointers
+zTemp1: .word ? 							; these must be consecutive.
 
 freeDictionary: .word ? 					; current end of dictionary address
 freeCode: .word ? 							; next free code byte.
@@ -44,6 +44,8 @@ dictType: .byte ?
 
 wordType: .byte ?							; type of word in buffer
 SearchBuffer: .fill BUFFERSIZE				; buffer for word for compiler
+InputBuffer: .fill BUFFERSIZE 				; input buffer
+ErrorBuffer: .fill BUFFERSIZE 				; error message buffer
 
 CurrentTOS: .word ? 						; current stack top value
 CurrentIndex: .byte ? 						; current index value.
@@ -55,5 +57,3 @@ SCHeight:.byte ?							; height
 SCX: .byte ?								; screen position
 SCY: .byte ?
 SCColour: .byte ?							; drawing colour
-
-InputBuffer: .fill BUFFERSIZE 				; input buffer

@@ -74,15 +74,15 @@ Stack_Over:	;; [over]
 ; ******************************************************************************
 
 Stack_Swap:	;; [swap]
-		sta 	zPage0 						; save A
-		sty 	zPage0+1 					; save Y
+		sta 	zTemp0 						; save A
+		sty 	zTemp0+1 					; save Y
 		lda 	lStack,x 					; push 2nd A on stack
 		pha
 		lda 	hStack,x 					; get 2nd Y
 		tay
-		lda 	zPage0 						; first A
+		lda 	zTemp0 						; first A
 		sta 	lStack,x
-		lda 	zPage0+1					; first Y
+		lda 	zTemp0+1					; first Y
 		sta 	hStack,x
 		pla 								; restore 2nd A
 		rts
@@ -94,21 +94,21 @@ Stack_Swap:	;; [swap]
 ; ******************************************************************************
 
 Stack_Push: ;; [push] C
-		sta 	zPage0 						; save TOS
-		sty 	zPage0+1
-		stx 	zPage1 						; save X
+		sta 	zTemp0 						; save TOS
+		sty 	zTemp0+1
+		stx 	zTemp1 						; save X
 
 		plx 								; return address into YX
 		ply
 
-		lda 	zPage0						; push LSB
+		lda 	zTemp0						; push LSB
 		pha
-		lda 	zPage0+1 					; push MSB
+		lda 	zTemp0+1 					; push MSB
 		pha 
 
 		phy 								; save address back.
 		phx
-		ldx 	zPage1 						; restore X
+		ldx 	zTemp1 						; restore X
 		.drop1 								; and restore the stack by dropping pushed value.
 		rts
 
@@ -121,18 +121,18 @@ Stack_Push: ;; [push] C
 Stack_Pull: ;; [pull] C
 		.savestack 							; save current TOS in next slot.
 		pla 								; get return address
-		sta 	zPage0
+		sta 	zTemp0
 		ply
 		;
 		pla 								; get MSB
-		sta 	zPage1+1
+		sta 	zTemp1+1
 		pla  								; get LSB
-		sta 	zPage1
+		sta 	zTemp1
 		;
 		phy 								; restore return address.
-		lda 	zPage0
+		lda 	zTemp0
 		pha
 
-		lda 	zPage1 						; set up YA
-		ldy 	zPage1+1
+		lda 	zTemp1 						; set up YA
+		ldy 	zTemp1+1
 		rts
