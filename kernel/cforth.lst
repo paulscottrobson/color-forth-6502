@@ -1,0 +1,1404 @@
+
+; 64tass Turbo Assembler Macro V1.54.1900 listing file
+; 64tass -q -c -o cforth.prg -L cforth.lst main.asm
+; Thu Oct 10 07:51:27 2019
+
+;Offset	;Hex		;Monitor	;Source
+
+;******  Processing input file: main.asm
+
+
+;******  Processing file: compiler/data.asm
+
+=32					STACKSIZE = 32 								; maximum data stack depth
+=$00					COL_COMMENT = $00 							; White (comment)
+=$40					COL_DEFINE = $40 							; Red (defining word)
+=$80					COL_COMPILE = $80 							; Green (compiling word)
+=$c0					COL_EXEC = $C0 								; Yellow (executing word)
+=$01					DTP_IMMEDIATE = $01 						; Bit 0 type (immediate, cannot be executed)
+=$02					DTP_COMPILEONLY = $02 						; Bit 1 type (cannot be execute, only compiled)
+>0010					zPage0: .word ?								; temporary page zero pointers
+>0012					zPage1: .word ? 							; these must be consecutive.
+>0014					freeDictionary: .word ? 					; current end of dictionary address
+>0016					freeCode: .word ? 							; next free code byte.
+>0018					freeCodeBank: .byte ?						; next free code byte bank (byte())
+>0019					newDictRecord: .word ? 						; address of created dictionary record.
+>001b					bufferPtr: .word ? 							; buffer pointer
+>0580					lStack: .fill STACKSIZE						; low and high byte stack areas. Note that
+>05a0					hStack: .fill STACKSIZE						; these do not have to be in page zero, it just
+>0600					dictAddr: .word ? 							; these are copied when a search is successful
+>0602					dictBank: .byte ? 							; (must be consecutive)
+>0603					dictType: .byte ?
+>0604					wordType: .byte ?							; type of word in buffer
+>0605					SearchBuffer: .fill 64 						; buffer for word
+>0645					CurrentTOS: .word ? 						; current stack top value
+>0647					CurrentIndex: .byte ? 						; current index value.
+>0648					DefaultStackPointer: .byte ? 				; default value 6502 stack pointer.
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: layouts/simple.inc
+
+=$0810					DictionaryBase = $0810						; Dictionary address
+=$2000					CodeSpace = $2000							; Code start position.
+=$a000					BuildAddress = $A000 						; where the binary is built
+
+;******  Return to file: main.asm
+
+.a000	ba		tsx				tsx 								; save entry SP
+.a001	8e 48 06	stx $0648			stx 	DefaultStackPointer
+.a004	4c a6 a0	jmp $a0a6			jmp 	ColdStart
+
+;******  Processing file: compiler/dictionary.asm
+
+.a007					DictionaryReset:
+.a007	80 06		bra $a00f			bra 	XDictionaryReset
+.a009					DictionarySearch:
+.a009	80 20		bra $a02b			bra 	XDictionarySearch
+.a00b					DictionaryCreate:
+.a00b	80 5b		bra $a068			bra 	XDictionaryCreate
+.a00d					DictionaryXorTypeByte:
+.a00d	80 50		bra $a05f			bra 	XDictionaryXorTypeByte
+.a00f					XDictionaryReset:
+.a00f	48		pha				pha
+.a010	a9 00		lda #$00			lda 	#0 							; reset the next free code byte position.
+.a012	85 18		sta $18				sta 	freeCodeBank
+.a014	a9 00		lda #$00			lda 	#CodeSpace & $FF
+.a016	85 16		sta $16				sta 	freeCode
+.a018	a9 20		lda #$20			lda 	#CodeSpace >> 8
+.a01a	85 17		sta $17				sta 	freeCode+1
+.a01c	a9 00		lda #$00			lda 	#0
+.a01e	8d 10 08	sta $0810			sta 	DictionaryBase
+.a021	a9 10		lda #$10			lda 	#DictionaryBase & $FF 		; set the next free byte pointer
+.a023	85 14		sta $14				sta 	freeDictionary
+.a025	a9 08		lda #$08			lda 	#DictionaryBase >> 8
+.a027	85 15		sta $15				sta 	freeDictionary+1
+.a029	68		pla				pla
+.a02a	60		rts				rts
+.a02b					XDictionarySearch:
+.a02b					_XDSLoop:
+.a02b	b2 10		lda ($10)			lda 	(zPage0)					; look at length
+.a02d	18		clc				clc 								; clear carry, return CC if failed.
+.a02e	f0 2c		beq $a05c			beq		_XDSExit					; exit ?
+.a030	a0 05		ldy #$05			ldy 	#5 							; where comparison starts in dictionary
+.a032	a2 00		ldx #$00			ldx 	#0 							; comparison starts in SearchBuffer
+.a034					_XDSCompare:
+.a034	bd 05 06	lda $0605,x			lda 	SearchBuffer,x 				; compare characters
+.a037	d1 10		cmp ($10),y			cmp 	(zPage0),y
+.a039	d0 14		bne $a04f			bne 	_XDSNext 					; did not match, try next.
+.a03b	e8		inx				inx 								; advance pointers
+.a03c	c8		iny				iny
+.a03d	0a		asl a				asl 	a 							; shift bit 7 into Carry
+.a03e	90 f4		bcc $a034			bcc 	_XDSCompare 				; found it !
+.a040	a0 01		ldy #$01			ldy 	#1 							; copy 1,2,3,4 to zPage
+.a042					_XDSCopy:
+.a042	b1 10		lda ($10),y			lda 	(zPage0),y
+.a044	99 ff 05	sta $05ff,y			sta 	dictAddr-1,y
+.a047	c8		iny				iny
+.a048	c0 05		cpy #$05			cpy 	#5
+.a04a	d0 f6		bne $a042			bne 	_XDSCopy
+.a04c	38		sec				sec 								; return CS
+.a04d	80 0d		bra $a05c			bra 	_XDSExit
+.a04f					_XDSNext:
+.a04f	18		clc				clc 								; add offset to zPage0
+.a050	a5 10		lda $10				lda 	zPage0
+.a052	72 10		adc ($10)			adc 	(zPage0)
+.a054	85 10		sta $10				sta 	zPage0
+.a056	90 d3		bcc $a02b			bcc 	_XDSLoop 					; no carry
+.a058	e6 11		inc $11				inc 	zPage0+1 					; carry forward.
+.a05a	80 cf		bra $a02b			bra 	_XDSLoop
+.a05c					_XDSExit:
+.a05c	08		php				php									; switch bank bank, preserving carry.
+.a05d	28		plp				plp
+.a05e	60		rts				rts
+.a05f					XDictionaryXorTypeByte:
+.a05f	5a		phy				phy
+.a060	a0 04		ldy #$04			ldy 	#4 							; offset to type
+.a062	51 19		eor ($19),y			eor 	(newDictRecord),y
+.a064	91 19		sta ($19),y			sta 	(newDictRecord),y
+.a066	7a		ply				ply
+.a067	60		rts				rts
+.a068					XDictionaryCreate:
+.a068	a5 14		lda $14				lda 	freeDictionary 				; copy address to new dictionary record pointer
+.a06a	85 19		sta $19				sta 	newDictRecord
+.a06c	a5 15		lda $15				lda 	freeDictionary+1
+.a06e	85 1a		sta $1a				sta 	newDictRecord+1
+.a070	a0 05		ldy #$05			ldy 	#5 							; copy the name in, also calculates offset
+.a072	a2 00		ldx #$00			ldx 	#0
+.a074					_XDCCopyName:
+.a074	bd 05 06	lda $0605,x			lda 	SearchBuffer,x 				; copy over name
+.a077	91 14		sta ($14),y			sta 	(freeDictionary),y
+.a079	e8		inx				inx
+.a07a	c8		iny				iny
+.a07b	0a		asl a				asl 	a 							; until bit 7 is copied.
+.a07c	90 f6		bcc $a074			bcc 	_XDCCopyName
+.a07e	98		tya				tya 								; Y is now offset to next
+.a07f	92 14		sta ($14)			sta 	(freeDictionary)
+.a081	a0 01		ldy #$01			ldy 	#1 							; copy code address & bank in.
+.a083	a5 16		lda $16				lda 	freeCode
+.a085	91 14		sta ($14),y			sta 	(freeDictionary),y
+.a087	c8		iny				iny
+.a088	a5 17		lda $17				lda 	freeCode+1
+.a08a	91 14		sta ($14),y			sta 	(freeDictionary),y
+.a08c	c8		iny				iny
+.a08d	a5 18		lda $18				lda 	freeCodeBank
+.a08f	91 14		sta ($14),y			sta 	(freeDictionary),y
+.a091	c8		iny				iny
+.a092	a9 00		lda #$00			lda 	#0 							; set the type byte to zero.
+.a094	91 14		sta ($14),y			sta 	(freeDictionary),y
+.a096	18		clc				clc 								; adjust freedictionary ptr up
+.a097	a5 14		lda $14				lda 	freeDictionary
+.a099	72 14		adc ($14)			adc 	(freeDictionary)
+.a09b	85 14		sta $14				sta 	freeDictionary
+.a09d	90 02		bcc $a0a1			bcc 	_XDCNoCarry
+.a09f	e6 15		inc $15				inc 	freeDictionary+1
+.a0a1					_XDCNoCarry:
+.a0a1	a9 00		lda #$00			lda 	#0 							; write end of dictionary marker
+.a0a3	92 14		sta ($14)			sta 	(freeDictionary)
+.a0a5	60		rts				rts
+
+;******  Return to file: main.asm
+
+.a0a6					ColdStart:
+.a0a6	ae 48 06	ldx $0648			ldx 	DefaultStackPointer 		; reset the stack pointer
+.a0a9	9a		txs				txs
+.a0aa	20 07 a0	jsr $a007			jsr 	DictionaryReset
+.a0ad	20 16 a3	jsr $a316			jsr 	System_ResetStack 			; clear stack.
+.a0b0	8e 47 06	stx $0647			stx 	CurrentIndex 				; save that state in 'current' variables
+.a0b3	8d 45 06	sta $0645			sta 	CurrentTOS 					; which is X (stack) and YA (top of stack)
+.a0b6	8c 46 06	sty $0646			sty 	CurrentTOS+1
+.a0b9	a2 c3		ldx #$c3			ldx 	#TestBuffer&$FF
+.a0bb	a0 a0		ldy #$a0			ldy 	#TestBuffer>>8
+.a0bd	20 d1 a0	jsr $a0d1			jsr 	BufferProcess
+>a0c0	ff				h1:		.byte 	$FF
+.a0c1	80 fd		bra $a0c0			bra 	h1
+
+;******  Processing file: testing/buffer.inc
+
+.a0c3					TestBuffer:
+>a0c3	f1					 .byte $f1
+>a0c4	f3					 .byte $f3
+>a0c5	20					 .byte $20
+>a0c6	f1					 .byte $f1
+>a0c7	f6					 .byte $f6
+>a0c8	20					 .byte $20
+>a0c9	f1					 .byte $f1
+>a0ca	ed					 .byte $ed
+>a0cb	20					 .byte $20
+>a0cc	f5					 .byte $f5
+>a0cd	f1					 .byte $f1
+>a0ce	f7					 .byte $f7
+>a0cf	20					 .byte $20
+>a0d0	00					 .byte $00
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: compiler/macros.inc
+
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: compiler/buffer.asm
+
+.a0d1					BufferProcess:
+.a0d1	84 1c		sty $1c				sty 	bufferPtr+1 				; save buffer pointer
+.a0d3	86 1b		stx $1b				stx 	bufferPtr
+.a0d5					_BPNextWord:
+.a0d5	b2 1b		lda ($1b)			lda 	(bufferPtr) 				; check the next byte
+.a0d7	f0 0e		beq $a0e7			beq 	_BPExit
+.a0d9	29 3f		and #$3f			and 	#$3F						; is it a space ?
+.a0db	c9 20		cmp #$20			cmp 	#' '
+.a0dd	d0 09		bne $a0e8			bne 	_BPFound 					; no, found a word.
+.a0df	e6 1b		inc $1b				inc 	bufferPtr 					; bump pointer over space
+.a0e1	d0 f2		bne $a0d5			bne 	_BPNextWord
+.a0e3	e6 1c		inc $1c				inc 	bufferPtr+1
+.a0e5	80 ee		bra $a0d5			bra 	_BPNextWord
+.a0e7					_BPExit:
+.a0e7	60		rts				rts
+.a0e8					_BPFound:
+.a0e8	b2 1b		lda ($1b)			lda 	(bufferPtr) 				; start by getting the type bits off first character
+.a0ea	29 c0		and #$c0			and 	#$C0						; bits 6 & 7
+.a0ec	8d 04 06	sta $0604			sta 	wordType
+.a0ef	a0 00		ldy #$00			ldy 	#0 							; copy the word.
+.a0f1					_BPCopy:
+.a0f1	b1 1b		lda ($1b),y			lda 	(bufferPtr),y 				; copy byte over, dropping the type bits
+.a0f3	29 3f		and #$3f			and 	#$3F
+.a0f5	99 05 06	sta $0605,y			sta 	SearchBuffer,y
+.a0f8	c8		iny				iny
+.a0f9	c0 40		cpy #$40			cpy 	#64 						; too long a word ?
+.a0fb	f0 0a		beq $a107			beq 	_BPFoundEnd
+.a0fd	b1 1b		lda ($1b),y			lda 	(bufferPtr),y 				; get next
+.a0ff	f0 06		beq $a107			beq 	_BPFoundEnd 				; if zero, then it's the end of the word
+.a101	29 3f		and #$3f			and 	#$3F 						; if not space, keep going.
+.a103	c9 20		cmp #$20			cmp 	#' '
+.a105	d0 ea		bne $a0f1			bne 	_BPCopy
+.a107					_BPFoundEnd:
+.a107	b9 04 06	lda $0604,y			lda 	SearchBuffer-1,y 			; set bit 7 of the last character
+.a10a	09 80		ora #$80			ora 	#$80
+.a10c	99 04 06	sta $0604,y			sta 	SearchBuffer-1,y
+.a10f	98		tya				tya 								; add offset to space/zero to buffer pointer
+.a110	18		clc				clc
+.a111	65 1b		adc $1b				adc 	bufferPtr
+.a113	85 1b		sta $1b				sta 	bufferPtr
+.a115	90 02		bcc $a119			bcc 	_BPNoCarry
+.a117	e6 1c		inc $1c				inc 	bufferPtr+1
+.a119					_BPNoCarry:
+.a119	ad 04 06	lda $0604			lda 	wordType 					; look at type
+.a11c	c9 00		cmp #$00			cmp 	#COL_COMMENT 			 	; comment (white), just go round again
+.a11e	f0 b5		beq $a0d5			beq 	_BPNextWord
+.a120	c9 40		cmp #$40			cmp 	#COL_DEFINE					; word definition (red)
+.a122	f0 09		beq $a12d			beq 	_BPDefineWord
+.a124	c9 c0		cmp #$c0			cmp 	#COL_EXEC 					; execute word immediately (yellow)
+.a126	f0 0a		beq $a132			beq 	_BPExecute
+.a128	20 b5 a1	jsr $a1b5			jsr 	BPCompile 					; must be compile (green)
+.a12b	80 a8		bra $a0d5			bra 	_BPNextWord
+.a12d					_BPDefineWord:
+.a12d	20 37 a1	jsr $a137			jsr 	BPDefineWord
+.a130	80 a3		bra $a0d5			bra 	_BPNextWord
+.a132					_BPExecute:
+.a132	20 4f a1	jsr $a14f			jsr 	BPExecute
+.a135	80 9e		bra $a0d5			bra 	_BPNextWord
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: compiler/define.asm
+
+.a137					BPDefineWord:
+.a137	20 35 a2	jsr $a235			jsr 	UtilSearchAll 				; does it already exist
+.a13a	b0 04		bcs $a140			bcs 	_BPDWDuplicate
+.a13c	20 0b a0	jsr $a00b			jsr 	DictionaryCreate 			; create new word in the dictionary.
+.a13f	60		rts				rts
+.a140					_BPDWDuplicate:
+>a140	ff				_		.byte $FF
+>a141	44 55 50 4c 49 43 41 54				.text "DUPLICATE DEF",0
+>a149	45 20 44 45 46 00
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: compiler/execute.asm
+
+.a14f					BPExecute:
+.a14f	20 35 a2	jsr $a235			jsr 	UtilSearchAll 				; look for it in dictionaries
+.a152	b0 16		bcs $a16a			bcs 	_BPEXFound 					; word found.
+.a154	20 4e a2	jsr $a24e			jsr 	UtilConvertInteger 			; Try as integer
+.a157	b0 3d		bcs $a196			bcs 	_BPEXInteger 				; if integer, push on stack, otherwise error
+>a159	ff				_		.byte $FF
+>a15a	55 4e 4b 4e 4f 57 4e 20				.text "UNKNOWN EXECUTE",0
+>a162	45 58 45 43 55 54 45 00
+.a16a					_BPEXFound:
+.a16a	2c 03 06	bit $0603			bit 	dictType					; check if compile only
+.a16d	30 16		bmi $a185			bmi 	_BPEXCompileOnly
+.a16f	ae 47 06	ldx $0647			ldx 	CurrentIndex 				; load the index, and TOS into X and YA
+.a172	ad 45 06	lda $0645			lda 	CurrentTOS
+.a175	ac 46 06	ldy $0646			ldy 	CurrentTOS+1
+.a178	20 93 a1	jsr $a193			jsr 	_BPEXWord 					; call the word code (set by dictionary search)
+.a17b	8e 47 06	stx $0647			stx 	CurrentIndex 				; save that state in 'current' variables
+.a17e	8d 45 06	sta $0645			sta 	CurrentTOS 					; which is X (stack) and YA (top of stack)
+.a181	8c 46 06	sty $0646			sty 	CurrentTOS+1
+.a184	60		rts				rts
+.a185					_BPEXCompileOnly:
+>a185	ff				_		.byte $FF
+>a186	43 4f 4d 50 49 4c 45 20				.text "COMPILE ONLY",0
+>a18e	4f 4e 4c 59 00
+.a193					_BPEXWord:
+.a193	6c 00 06	jmp ($0600)			jmp 	(dictAddr)
+.a196					_BPEXInteger:
+.a196	48		pha				pha 								; save constant
+.a197	5a		phy				phy
+.a198	ae 47 06	ldx $0647			ldx 	CurrentIndex 				; load the index, and TOS into X and YA
+.a19b	ad 45 06	lda $0645			lda 	CurrentTOS
+.a19e	ac 46 06	ldy $0646			ldy 	CurrentTOS+1
+.a1a1	e8		inx				inx 								; X points to TOS always
+.a1a2	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a1a5	98		tya				tya
+.a1a6	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a1a9	7a		ply				ply 								; restore constant
+.a1aa	68		pla				pla
+.a1ab	8e 47 06	stx $0647			stx 	CurrentIndex 				; save that state in 'current' variables
+.a1ae	8d 45 06	sta $0645			sta 	CurrentTOS 					; which is X (stack) and YA (top of stack)
+.a1b1	8c 46 06	sty $0646			sty 	CurrentTOS+1
+.a1b4	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: compiler/compile.asm
+
+.a1b5					BPCompile:
+.a1b5	20 35 a2	jsr $a235			jsr 	UtilSearchAll 				; look for it in dictionaries
+.a1b8	b0 1d		bcs $a1d7			bcs 	_BPCOFound 					; word found.
+.a1ba	20 4e a2	jsr $a24e			jsr 	UtilConvertInteger 			; is it a number
+.a1bd	b0 1c		bcs $a1db			bcs 	_BPCONumber 				; if so, do a number.
+.a1bf	ad 05 06	lda $0605			lda 	SearchBuffer 				; is it a quoted string ?
+.a1c2	c9 22		cmp #$22			cmp 	#'"'
+.a1c4	f0 3f		beq $a205			beq 	_BPCOString
+>a1c6	ff				_		.byte $FF
+>a1c7	55 4e 4b 4e 4f 57 4e 20				.text "UNKNOWN COMPILE",0
+>a1cf	43 4f 4d 50 49 4c 45 00
+.a1d7					_BPCOFound:
+.a1d7	20 ac a2	jsr $a2ac			jsr 	UtilCompileCall 			; compile call to currently found element
+.a1da	60		rts				rts
+.a1db					_BPCONumber:
+.a1db	c0 00		cpy #$00			cpy 	#0 							; check if 8 bit constant
+.a1dd	f0 14		beq $a1f3			beq 	_BPCOShort
+.a1df	48		pha				pha 								; 16 bit constant
+.a1e0	5a		phy				phy
+.a1e1	a9 20		lda #$20			lda 	#$20 						; compile call
+.a1e3	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a1e6	a9 d4		lda #$d4			lda 	#Constant_2Byte & $FF
+.a1e8	a0 a2		ldy #$a2			ldy 	#Constant_2Byte >> 8
+.a1ea	20 bf a2	jsr $a2bf			jsr 	UtilCompileWord
+.a1ed	7a		ply				ply
+.a1ee	68		pla				pla
+.a1ef	20 bf a2	jsr $a2bf			jsr 	UtilCompileWord 			; compile the actual word
+.a1f2	60		rts				rts
+.a1f3					_BPCOShort:
+.a1f3	48		pha				pha
+.a1f4	a9 20		lda #$20			lda 	#$20 						; compile call
+.a1f6	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a1f9	a9 f4		lda #$f4			lda 	#Constant_1Byte & $FF
+.a1fb	a0 a2		ldy #$a2			ldy 	#Constant_1Byte >> 8
+.a1fd	20 bf a2	jsr $a2bf			jsr 	UtilCompileWord
+.a200	68		pla				pla
+.a201	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte 			; compile the actual byte
+.a204	60		rts				rts
+.a205					_BPCOString:
+.a205	a9 20		lda #$20			lda 	#$20 						; compile call
+.a207	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a20a	a9 0d		lda #$0d			lda 	#Constant_String & $FF
+.a20c	a0 a3		ldy #$a3			ldy 	#Constant_String >> 8
+.a20e	20 bf a2	jsr $a2bf			jsr 	UtilCompileWord
+.a211	da		phx				phx 								; find length of string.
+.a212	a2 00		ldx #$00			ldx 	#0
+.a214					_BPCOSFindLength:
+.a214	e8		inx				inx
+.a215	bd 05 06	lda $0605,x			lda 	SearchBuffer,x
+.a218	10 fa		bpl $a214			bpl 	_BPCOSFindLength
+.a21a	8a		txa				txa
+.a21b	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a21e	a2 01		ldx #$01			ldx 	#1 							; compile the string
+.a220					_BPCOSCompile:
+.a220	bd 05 06	lda $0605,x			lda 	SearchBuffer,x
+.a223	c9 5f		cmp #$5f			cmp 	#"_" 						; map _ to space
+.a225	d0 02		bne $a229			bne		_BPCOSNotSpace
+.a227	a9 20		lda #$20			lda 	#" "
+.a229					_BPCOSNotSpace:
+.a229	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a22c	bd 05 06	lda $0605,x			lda 	SearchBuffer,x
+.a22f	0a		asl a				asl 	a
+.a230	e8		inx				inx
+.a231	90 ed		bcc $a220			bcc 	_BPCOSCompile
+.a233	fa		plx				plx
+.a234	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: compiler/utilities.asm
+
+.a235					UtilSearchAll:
+.a235	a9 10		lda #$10			lda 	#DictionaryBase & $FF		; search the user dictionary
+.a237	a2 08		ldx #$08			ldx 	#DictionaryBase >> 8
+.a239	85 10		sta $10				sta 	zPage0
+.a23b	86 11		stx $11				stx 	zPage0+1
+.a23d	20 09 a0	jsr $a009			jsr 	DictionarySearch
+.a240	b0 0b		bcs $a24d			bcs 	_BSAExit
+.a242	a9 f1		lda #$f1			lda 	#KernelDictionary & $FF		; search the system dictionary
+.a244	a2 a5		ldx #$a5			ldx 	#KernelDictionary >> 8
+.a246	85 10		sta $10				sta 	zPage0
+.a248	86 11		stx $11				stx 	zPage0+1
+.a24a	20 09 a0	jsr $a009			jsr 	DictionarySearch
+.a24d					_BSAExit:
+.a24d	60		rts				rts
+.a24e					UtilConvertInteger:
+.a24e	64 10		stz $10				stz 	zPage0 						; zero the result
+.a250	64 11		stz $11				stz 	zPage0+1
+.a252	a2 ff		ldx #$ff			ldx 	#255 						; start position-1
+.a254					_BCILoop:
+.a254	e8		inx				inx 								; next character
+.a255	20 91 a2	jsr $a291			jsr 	UtilTimes10 				; zPage0 x 10
+.a258	bd 05 06	lda $0605,x			lda 	SearchBuffer,x 				; look at character
+.a25b	29 7f		and #$7f			and 	#$7F  						; drop end character bit
+.a25d	c9 30		cmp #$30			cmp 	#'0'						; is it an integer character
+.a25f	90 2e		bcc $a28f			bcc 	_BCIFail 					; if not, then exit.
+.a261	c9 3a		cmp #$3a			cmp 	#'9'+1
+.a263	b0 2a		bcs $a28f			bcs 	_BCIFail
+.a265	29 0f		and #$0f			and 	#15 						; now constant 0-9
+.a267	18		clc				clc 								; add to current
+.a268	65 10		adc $10				adc 	zPage0
+.a26a	85 10		sta $10				sta 	zPage0
+.a26c	90 02		bcc $a270			bcc 	_BCINoCarry
+.a26e	e6 11		inc $11				inc 	zPage0+1
+.a270					_BCINoCarry:
+.a270	bd 05 06	lda $0605,x			lda 	SearchBuffer,x 				; check if was last character
+.a273	30 14		bmi $a289			bmi 	_BCISucceed 				; if so, then it's okay.
+.a275	bd 06 06	lda $0606,x			lda 	SearchBuffer+1,x 			; is the next char -+End
+.a278	c9 ad		cmp #$ad			cmp 	#"-"+$80
+.a27a	d0 d8		bne $a254			bne 	_BCILoop 					; no, go round again.
+.a27c					_BCINegateExit:
+.a27c	38		sec				sec
+.a27d	a9 00		lda #$00			lda 	#0 							; do the arithmetic adjustment
+.a27f	e5 10		sbc $10				sbc 	zPage0
+.a281	85 10		sta $10				sta 	zPage0
+.a283	a9 00		lda #$00			lda 	#0
+.a285	e5 11		sbc $11				sbc 	zPage0+1
+.a287	85 11		sta $11				sta 	zPage0+1
+.a289					_BCISucceed:
+.a289	38		sec				sec
+.a28a	a5 10		lda $10				lda 	zPage0
+.a28c	a4 11		ldy $11				ldy 	zPage0+1
+.a28e	60		rts				rts
+.a28f					_BCIFail:
+.a28f	18		clc				clc
+.a290	60		rts				rts
+.a291					UtilTimes10:
+.a291	a5 11		lda $11				lda 	zPage0+1 					; save in YA
+.a293	a8		tay				tay
+.a294	a5 10		lda $10				lda 	zPage0
+.a296	06 10		asl $10				asl 	zPage0 						; x 4
+.a298	26 11		rol $11				rol 	zPage0+1
+.a29a	06 10		asl $10				asl 	zPage0
+.a29c	26 11		rol $11				rol 	zPage0+1
+.a29e	65 10		adc $10				adc 	zPage0 						; add YA value gives x 5
+.a2a0	85 10		sta $10				sta 	zPage0
+.a2a2	98		tya				tya
+.a2a3	65 11		adc $11				adc 	zPage0+1
+.a2a5	85 11		sta $11				sta 	zPage0+1
+.a2a7	06 10		asl $10				asl 	zPage0	 					; x 10
+.a2a9	26 11		rol $11				rol 	zPage0+1
+.a2ab	60		rts				rts
+.a2ac					UtilCompileCall:
+.a2ac	48		pha				pha
+.a2ad	5a		phy				phy
+.a2ae	a9 20		lda #$20			lda 	#$20 						; JSR
+.a2b0	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a2b3	ad 00 06	lda $0600			lda 	dictAddr
+.a2b6	ac 01 06	ldy $0601			ldy 	dictAddr+1
+.a2b9	20 bf a2	jsr $a2bf			jsr 	UtilCompileWord
+.a2bc	7a		ply				ply
+.a2bd	68		pla				pla
+.a2be	60		rts				rts
+.a2bf					UtilCompileWord:
+.a2bf	48		pha				pha
+.a2c0	5a		phy				phy
+.a2c1	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a2c4	98		tya				tya
+.a2c5	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a2c8	7a		ply				ply
+.a2c9	68		pla				pla
+.a2ca	60		rts				rts
+.a2cb					UtilCompileByte:
+.a2cb	92 16		sta ($16)			sta 	(freeCode)
+.a2cd	e6 16		inc $16				inc 	freeCode
+.a2cf	d0 02		bne $a2d3			bne 	_UCBNoCarry
+.a2d1	e6 17		inc $17				inc 	freeCode+1
+.a2d3					_UCBNoCarry:
+.a2d3	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: compiler/support.asm
+
+.a2d4					Constant_2Byte:
+.a2d4	e8		inx				inx 								; X points to TOS always
+.a2d5	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a2d8	98		tya				tya
+.a2d9	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a2dc	68		pla				pla 								; get return address into YA
+.a2dd	7a		ply				ply
+.a2de	1a		inc a				inc 	a
+.a2df	d0 01		bne $a2e2			bne		*+3
+.a2e1	c8		iny				iny
+.a2e2	85 10		sta $10				sta 	zPage0 						; save address in zero page
+.a2e4	84 11		sty $11				sty 	zPage0+1
+.a2e6	1a		inc a				inc 	a
+.a2e7	d0 01		bne $a2ea			bne		*+3
+.a2e9	c8		iny				iny
+.a2ea	5a		phy				phy 								; push it back
+.a2eb	48		pha				pha
+.a2ec	a0 01		ldy #$01			ldy 	#1 							; load the constant into YA
+.a2ee	b1 10		lda ($10),y			lda 	(zPage0),y
+.a2f0	a8		tay				tay
+.a2f1	b2 10		lda ($10)			lda 	(zPage0)
+.a2f3	60		rts				rts
+.a2f4					Constant_1Byte:
+.a2f4	e8		inx				inx 								; X points to TOS always
+.a2f5	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a2f8	98		tya				tya
+.a2f9	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a2fc	68		pla				pla 								; get return address into YA
+.a2fd	7a		ply				ply
+.a2fe	1a		inc a				inc 	a
+.a2ff	d0 01		bne $a302			bne		*+3
+.a301	c8		iny				iny
+.a302	85 10		sta $10				sta 	zPage0 						; save address in zero page
+.a304	84 11		sty $11				sty 	zPage0+1
+.a306	5a		phy				phy 								; push it back
+.a307	48		pha				pha
+.a308	b2 10		lda ($10)			lda 	(zPage0)
+.a30a	a0 00		ldy #$00			ldy 	#0
+.a30c	60		rts				rts
+.a30d					Constant_String:
+.a30d	e8		inx				inx 								; X points to TOS always
+.a30e	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a311	98		tya				tya
+.a312	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a315	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: vocabulary/system.voc
+
+.a316					System_ResetStack:
+.a316	a2 fe		ldx #$fe			ldx 	#-2 						; reset the stack pointer
+.a318	a9 00		lda #$00			lda 	#0 							; clear the tos value held in YA
+.a31a	a8		tay				tay
+.a31b	60		rts				rts
+.a31c					System_ResetUserDictionary:
+.a31c	20 07 a0	jsr $a007			jsr 	DictionaryReset 			; reset the dictionary and code pointer.
+.a31f	60		rts				rts
+.a320					System_ColdStart:
+.a320	4c a6 a0	jmp $a0a6			jmp 	ColdStart
+.a323					System_Break:
+>a323	ff						.byte 	$FF
+.a324	60		rts				rts
+.a325					System_CompileByte:
+.a325	20 cb a2	jsr $a2cb			jsr 	UtilCompileByte
+.a328	bd a0 05	lda $05a0,x			lda 	hStack,x					; high -> Y
+.a32b	a8		tay				tay
+.a32c	bd 80 05	lda $0580,x			lda 	lStack,x 					; low -> A
+.a32f	ca		dex				dex 								; fix up stack
+.a330	60		rts				rts
+.a331					System_CompileWord:
+.a331	20 bf a2	jsr $a2bf			jsr 	UtilCompileWord
+.a334	bd a0 05	lda $05a0,x			lda 	hStack,x					; high -> Y
+.a337	a8		tay				tay
+.a338	bd 80 05	lda $0580,x			lda 	lStack,x 					; low -> A
+.a33b	ca		dex				dex 								; fix up stack
+.a33c	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: generated/constants.voc
+
+.a33d					Constant_0:
+.a33d	e8		inx				inx 								; X points to TOS always
+.a33e	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a341	98		tya				tya
+.a342	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a345	a9 00		lda #$00			lda 	#(0) & $FF					; load new constant into YA
+.a347	a0 00		ldy #$00			ldy 	#(0) >> 8
+.a349	60		rts				rts
+.a34a					Constant_1:
+.a34a	e8		inx				inx 								; X points to TOS always
+.a34b	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a34e	98		tya				tya
+.a34f	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a352	a9 01		lda #$01			lda 	#(1) & $FF					; load new constant into YA
+.a354	a0 00		ldy #$00			ldy 	#(1) >> 8
+.a356	60		rts				rts
+.a357					Constant_2:
+.a357	e8		inx				inx 								; X points to TOS always
+.a358	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a35b	98		tya				tya
+.a35c	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a35f	a9 02		lda #$02			lda 	#(2) & $FF					; load new constant into YA
+.a361	a0 00		ldy #$00			ldy 	#(2) >> 8
+.a363	60		rts				rts
+.a364					Constant_4:
+.a364	e8		inx				inx 								; X points to TOS always
+.a365	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a368	98		tya				tya
+.a369	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a36c	a9 04		lda #$04			lda 	#(4) & $FF					; load new constant into YA
+.a36e	a0 00		ldy #$00			ldy 	#(4) >> 8
+.a370	60		rts				rts
+.a371					Constant_6:
+.a371	e8		inx				inx 								; X points to TOS always
+.a372	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a375	98		tya				tya
+.a376	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a379	a9 06		lda #$06			lda 	#(6) & $FF					; load new constant into YA
+.a37b	a0 00		ldy #$00			ldy 	#(6) >> 8
+.a37d	60		rts				rts
+.a37e					Constant_8:
+.a37e	e8		inx				inx 								; X points to TOS always
+.a37f	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a382	98		tya				tya
+.a383	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a386	a9 08		lda #$08			lda 	#(8) & $FF					; load new constant into YA
+.a388	a0 00		ldy #$00			ldy 	#(8) >> 8
+.a38a	60		rts				rts
+.a38b					Constant_10:
+.a38b	e8		inx				inx 								; X points to TOS always
+.a38c	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a38f	98		tya				tya
+.a390	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a393	a9 0a		lda #$0a			lda 	#(10) & $FF					; load new constant into YA
+.a395	a0 00		ldy #$00			ldy 	#(10) >> 8
+.a397	60		rts				rts
+.a398					Constant_12:
+.a398	e8		inx				inx 								; X points to TOS always
+.a399	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a39c	98		tya				tya
+.a39d	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3a0	a9 0c		lda #$0c			lda 	#(12) & $FF					; load new constant into YA
+.a3a2	a0 00		ldy #$00			ldy 	#(12) >> 8
+.a3a4	60		rts				rts
+.a3a5					Constant_14:
+.a3a5	e8		inx				inx 								; X points to TOS always
+.a3a6	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a3a9	98		tya				tya
+.a3aa	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3ad	a9 0e		lda #$0e			lda 	#(14) & $FF					; load new constant into YA
+.a3af	a0 00		ldy #$00			ldy 	#(14) >> 8
+.a3b1	60		rts				rts
+.a3b2					Constant_16:
+.a3b2	e8		inx				inx 								; X points to TOS always
+.a3b3	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a3b6	98		tya				tya
+.a3b7	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3ba	a9 10		lda #$10			lda 	#(16) & $FF					; load new constant into YA
+.a3bc	a0 00		ldy #$00			ldy 	#(16) >> 8
+.a3be	60		rts				rts
+.a3bf					Constant_24:
+.a3bf	e8		inx				inx 								; X points to TOS always
+.a3c0	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a3c3	98		tya				tya
+.a3c4	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3c7	a9 18		lda #$18			lda 	#(24) & $FF					; load new constant into YA
+.a3c9	a0 00		ldy #$00			ldy 	#(24) >> 8
+.a3cb	60		rts				rts
+.a3cc					Constant_32:
+.a3cc	e8		inx				inx 								; X points to TOS always
+.a3cd	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a3d0	98		tya				tya
+.a3d1	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3d4	a9 20		lda #$20			lda 	#(32) & $FF					; load new constant into YA
+.a3d6	a0 00		ldy #$00			ldy 	#(32) >> 8
+.a3d8	60		rts				rts
+.a3d9					Constant_64:
+.a3d9	e8		inx				inx 								; X points to TOS always
+.a3da	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a3dd	98		tya				tya
+.a3de	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3e1	a9 40		lda #$40			lda 	#(64) & $FF					; load new constant into YA
+.a3e3	a0 00		ldy #$00			ldy 	#(64) >> 8
+.a3e5	60		rts				rts
+.a3e6					Constant_100:
+.a3e6	e8		inx				inx 								; X points to TOS always
+.a3e7	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a3ea	98		tya				tya
+.a3eb	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3ee	a9 64		lda #$64			lda 	#(100) & $FF					; load new constant into YA
+.a3f0	a0 00		ldy #$00			ldy 	#(100) >> 8
+.a3f2	60		rts				rts
+.a3f3					Constant_127:
+.a3f3	e8		inx				inx 								; X points to TOS always
+.a3f4	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a3f7	98		tya				tya
+.a3f8	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a3fb	a9 7f		lda #$7f			lda 	#(127) & $FF					; load new constant into YA
+.a3fd	a0 00		ldy #$00			ldy 	#(127) >> 8
+.a3ff	60		rts				rts
+.a400					Constant_128:
+.a400	e8		inx				inx 								; X points to TOS always
+.a401	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a404	98		tya				tya
+.a405	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a408	a9 80		lda #$80			lda 	#(128) & $FF					; load new constant into YA
+.a40a	a0 00		ldy #$00			ldy 	#(128) >> 8
+.a40c	60		rts				rts
+.a40d					Constant_255:
+.a40d	e8		inx				inx 								; X points to TOS always
+.a40e	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a411	98		tya				tya
+.a412	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a415	a9 ff		lda #$ff			lda 	#(255) & $FF					; load new constant into YA
+.a417	a0 00		ldy #$00			ldy 	#(255) >> 8
+.a419	60		rts				rts
+.a41a					Constant_256:
+.a41a	e8		inx				inx 								; X points to TOS always
+.a41b	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a41e	98		tya				tya
+.a41f	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a422	a9 00		lda #$00			lda 	#(256) & $FF					; load new constant into YA
+.a424	a0 01		ldy #$01			ldy 	#(256) >> 8
+.a426	60		rts				rts
+.a427					Constant_512:
+.a427	e8		inx				inx 								; X points to TOS always
+.a428	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a42b	98		tya				tya
+.a42c	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a42f	a9 00		lda #$00			lda 	#(512) & $FF					; load new constant into YA
+.a431	a0 02		ldy #$02			ldy 	#(512) >> 8
+.a433	60		rts				rts
+.a434					Constant_1024:
+.a434	e8		inx				inx 								; X points to TOS always
+.a435	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a438	98		tya				tya
+.a439	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a43c	a9 00		lda #$00			lda 	#(1024) & $FF					; load new constant into YA
+.a43e	a0 04		ldy #$04			ldy 	#(1024) >> 8
+.a440	60		rts				rts
+.a441					Constant_2048:
+.a441	e8		inx				inx 								; X points to TOS always
+.a442	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a445	98		tya				tya
+.a446	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a449	a9 00		lda #$00			lda 	#(2048) & $FF					; load new constant into YA
+.a44b	a0 08		ldy #$08			ldy 	#(2048) >> 8
+.a44d	60		rts				rts
+.a44e					Constant_4096:
+.a44e	e8		inx				inx 								; X points to TOS always
+.a44f	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a452	98		tya				tya
+.a453	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a456	a9 00		lda #$00			lda 	#(4096) & $FF					; load new constant into YA
+.a458	a0 10		ldy #$10			ldy 	#(4096) >> 8
+.a45a	60		rts				rts
+.a45b					Constant_32767:
+.a45b	e8		inx				inx 								; X points to TOS always
+.a45c	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a45f	98		tya				tya
+.a460	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a463	a9 ff		lda #$ff			lda 	#(32767) & $FF					; load new constant into YA
+.a465	a0 7f		ldy #$7f			ldy 	#(32767) >> 8
+.a467	60		rts				rts
+.a468					Constant_32768:
+.a468	e8		inx				inx 								; X points to TOS always
+.a469	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a46c	98		tya				tya
+.a46d	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a470	a9 00		lda #$00			lda 	#(32768) & $FF					; load new constant into YA
+.a472	a0 80		ldy #$80			ldy 	#(32768) >> 8
+.a474	60		rts				rts
+.a475					Constant_minus1:
+.a475	e8		inx				inx 								; X points to TOS always
+.a476	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a479	98		tya				tya
+.a47a	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a47d	a9 ff		lda #$ff			lda 	#(65535) & $FF					; load new constant into YA
+.a47f	a0 ff		ldy #$ff			ldy 	#(65535) >> 8
+.a481	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: vocabulary/unary.voc
+
+.a482					Unary_BSwap:
+.a482	48		pha				pha 								; save A
+.a483	98		tya				tya 								; Y->A
+.a484	7a		ply				ply 								; old A->Y
+.a485	60		rts				rts
+.a486					Unary_Not:
+.a486	49 ff		eor #$ff			eor 	#$FF
+.a488	48		pha				pha
+.a489	98		tya				tya
+.a48a	49 ff		eor #$ff			eor 	#$FF
+.a48c	a8		tay				tay
+.a48d	68		pla				pla
+.a48e	60		rts				rts
+.a48f					Unary_Abs:
+.a48f	c0 00		cpy #$00			cpy 	#0 							; do -ve code if -ve
+.a491	30 01		bmi $a494			bmi 	Unary_Negate
+.a493	60		rts				rts
+.a494					Unary_Negate:
+.a494	49 ff		eor #$ff			eor 	#$FF
+.a496	48		pha				pha
+.a497	98		tya				tya
+.a498	49 ff		eor #$ff			eor 	#$FF
+.a49a	a8		tay				tay
+.a49b	68		pla				pla
+.a49c	1a		inc a				inc 	a
+.a49d	d0 01		bne $a4a0			bne		*+3
+.a49f	c8		iny				iny
+.a4a0	60		rts				rts
+.a4a1					Unary_Times16:
+.a4a1	0a		asl a				asl 	a 							; shift low left
+.a4a2	48		pha				pha
+.a4a3	98		tya				tya 								; shift high left
+.a4a4	2a		rol a				rol 	a
+.a4a5	a8		tay				tay
+.a4a6	68		pla				pla
+.a4a7					Unary_Times8:
+.a4a7	0a		asl a				asl 	a 							; shift low left
+.a4a8	48		pha				pha
+.a4a9	98		tya				tya 								; shift high left
+.a4aa	2a		rol a				rol 	a
+.a4ab	a8		tay				tay
+.a4ac	68		pla				pla
+.a4ad					Unary_Times4:
+.a4ad	0a		asl a				asl 	a 							; shift low left
+.a4ae	48		pha				pha
+.a4af	98		tya				tya 								; shift high left
+.a4b0	2a		rol a				rol 	a
+.a4b1	a8		tay				tay
+.a4b2	68		pla				pla
+.a4b3					Unary_Times2:
+.a4b3	0a		asl a				asl 	a 							; shift low left
+.a4b4	48		pha				pha
+.a4b5	98		tya				tya 								; shift high left
+.a4b6	2a		rol a				rol 	a
+.a4b7	a8		tay				tay
+.a4b8	68		pla				pla
+.a4b9	60		rts				rts
+.a4ba					Unary_Div4:
+.a4ba	48		pha				pha 								; save low
+.a4bb	98		tya				tya 								; get high, shift MSB into C
+.a4bc	0a		asl a				asl 	a
+.a4bd	98		tya				tya 								; get high again, rotate C in
+.a4be	6a		ror a				ror 	a
+.a4bf	a8		tay				tay
+.a4c0	68		pla				pla 								; restore low and rotate right
+.a4c1	6a		ror a				ror 	a
+.a4c2					Unary_Div2:
+.a4c2	48		pha				pha 								; save low
+.a4c3	98		tya				tya 								; get high, shift MSB into C
+.a4c4	0a		asl a				asl 	a
+.a4c5	98		tya				tya 								; get high again, rotate C in
+.a4c6	6a		ror a				ror 	a
+.a4c7	a8		tay				tay
+.a4c8	68		pla				pla 								; restore low and rotate right
+.a4c9	6a		ror a				ror 	a
+.a4ca	60		rts				rts
+.a4cb					Unary_Inc2:
+.a4cb	1a		inc a				inc 	a
+.a4cc	d0 01		bne $a4cf			bne		*+3
+.a4ce	c8		iny				iny
+.a4cf					Unary_Inc1:
+.a4cf	1a		inc a				inc 	a
+.a4d0	d0 01		bne $a4d3			bne		*+3
+.a4d2	c8		iny				iny
+.a4d3	60		rts				rts
+.a4d4					Unary_Dec2:
+.a4d4	38		sec				sec
+.a4d5	e9 02		sbc #$02			sbc 	#2
+.a4d7	b0 01		bcs $a4da			bcs		*+3
+.a4d9	88		dey				dey
+.a4da	60		rts				rts
+.a4db					UnaryDec1:
+.a4db	38		sec				sec
+.a4dc	e9 01		sbc #$01			sbc 	#1
+.a4de	b0 01		bcs $a4e1			bcs		*+3
+.a4e0	88		dey				dey
+.a4e1	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: vocabulary/binary.voc
+
+.a4e2					Binary_Add:
+.a4e2	18		clc				clc
+.a4e3	7d 80 05	adc $0580,x			adc 	lStack,x 					; do the LSB
+.a4e6	48		pha				pha 								; save the result
+.a4e7	98		tya				tya 								; do the MSB
+.a4e8	7d a0 05	adc $05a0,x			adc 	hStack,x
+.a4eb	a8		tay				tay
+.a4ec	68		pla				pla 								; restore
+.a4ed	ca		dex				dex 								; pop off the stack.
+.a4ee	60		rts				rts
+.a4ef					Binary_And:
+.a4ef	3d 80 05	and $0580,x			and 	lStack,x 					; do the LSB
+.a4f2	48		pha				pha 								; save the result
+.a4f3	98		tya				tya 								; do the MSB
+.a4f4	3d a0 05	and $05a0,x			and 	hStack,x
+.a4f7	a8		tay				tay
+.a4f8	68		pla				pla 								; restore
+.a4f9	ca		dex				dex 								; pop off the stack.
+.a4fa	60		rts				rts
+.a4fb					Binary_Or:
+.a4fb	1d 80 05	ora $0580,x			ora 	lStack,x 					; do the LSB
+.a4fe	48		pha				pha 								; save the result
+.a4ff	98		tya				tya 								; do the MSB
+.a500	1d a0 05	ora $05a0,x			ora 	hStack,x
+.a503	a8		tay				tay
+.a504	68		pla				pla 								; restore
+.a505	ca		dex				dex 								; pop off the stack.
+.a506	60		rts				rts
+.a507					Binary_Xor:
+.a507	5d 80 05	eor $0580,x			eor 	lStack,x 					; do the LSB
+.a50a	48		pha				pha 								; save the result
+.a50b	98		tya				tya 								; do the MSB
+.a50c	5d a0 05	eor $05a0,x			eor 	hStack,x
+.a50f	a8		tay				tay
+.a510	68		pla				pla 								; restore
+.a511	ca		dex				dex 								; pop off the stack.
+.a512	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: vocabulary/stack.voc
+
+.a513					Stack_Drop:
+.a513	bd a0 05	lda $05a0,x			lda 	hStack,x					; high -> Y
+.a516	a8		tay				tay
+.a517	bd 80 05	lda $0580,x			lda 	lStack,x 					; low -> A
+.a51a	ca		dex				dex 								; fix up stack
+.a51b	60		rts				rts
+.a51c					Stack_QDup:
+.a51c	c9 00		cmp #$00			cmp 	#0
+.a51e	d0 05		bne $a525			bne 	Stack_Dup
+.a520	c0 00		cpy #$00			cpy 	#0
+.a522	d0 01		bne $a525			bne 	Stack_Dup
+.a524	60		rts				rts
+.a525					Stack_Dup:
+.a525	48		pha				pha
+.a526	e8		inx				inx 								; X points to TOS always
+.a527	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a52a	98		tya				tya
+.a52b	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a52e	68		pla				pla
+.a52f	60		rts				rts
+.a530					Stack_Nip:
+.a530	ca		dex				dex
+.a531	60		rts				rts
+.a532					Stack_Over:
+.a532	e8		inx				inx 								; X points to TOS always
+.a533	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a536	98		tya				tya
+.a537	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a53a	bd 9f 05	lda $059f,x			lda 	hStack-1,x 					; copy 2nd element to YA
+.a53d	a8		tay				tay
+.a53e	bd 7f 05	lda $057f,x			lda 	lStack-1,x
+.a541	60		rts				rts
+.a542					Stack_Swap:
+.a542	85 10		sta $10				sta 	zPage0 						; save A
+.a544	84 11		sty $11				sty 	zPage0+1 					; save Y
+.a546	bd 80 05	lda $0580,x			lda 	lStack,x 					; push 2nd A on stack
+.a549	48		pha				pha
+.a54a	bd a0 05	lda $05a0,x			lda 	hStack,x 					; get 2nd Y
+.a54d	a8		tay				tay
+.a54e	a5 10		lda $10				lda 	zPage0 						; first A
+.a550	9d 80 05	sta $0580,x			sta 	lStack,x
+.a553	a5 11		lda $11				lda 	zPage0+1					; first Y
+.a555	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a558	68		pla				pla 								; restore 2nd A
+.a559	60		rts				rts
+.a55a					Stack_Push:
+.a55a	85 10		sta $10				sta 	zPage0 						; save TOS
+.a55c	84 11		sty $11				sty 	zPage0+1
+.a55e	86 12		stx $12				stx 	zPage1 						; save X
+.a560	fa		plx				plx 								; return address into YX
+.a561	7a		ply				ply
+.a562	a5 10		lda $10				lda 	zPage0						; push LSB
+.a564	48		pha				pha
+.a565	a5 11		lda $11				lda 	zPage0+1 					; push MSB
+.a567	48		pha				pha
+.a568	5a		phy				phy 								; save address back.
+.a569	da		phx				phx
+.a56a	a6 12		ldx $12				ldx 	zPage1 						; restore X
+.a56c	bd a0 05	lda $05a0,x			lda 	hStack,x					; high -> Y
+.a56f	a8		tay				tay
+.a570	bd 80 05	lda $0580,x			lda 	lStack,x 					; low -> A
+.a573	ca		dex				dex 								; fix up stack
+.a574	60		rts				rts
+.a575					Stack_Pull:
+.a575	e8		inx				inx 								; X points to TOS always
+.a576	9d 80 05	sta $0580,x			sta 	lStack,x 					; save current YA on stack
+.a579	98		tya				tya
+.a57a	9d a0 05	sta $05a0,x			sta 	hStack,x
+.a57d	68		pla				pla 								; get return address
+.a57e	85 10		sta $10				sta 	zPage0
+.a580	7a		ply				ply
+.a581	68		pla				pla 								; get MSB
+.a582	85 13		sta $13				sta 	zPage1+1
+.a584	68		pla				pla  								; get LSB
+.a585	85 12		sta $12				sta 	zPage1
+.a587	5a		phy				phy 								; restore return address.
+.a588	a5 10		lda $10				lda 	zPage0
+.a58a	48		pha				pha
+.a58b	a5 12		lda $12				lda 	zPage1 						; set up YA
+.a58d	a4 13		ldy $13				ldy 	zPage1+1
+.a58f	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: vocabulary/memory.voc
+
+.a590					Memory_ReadByte:
+.a590	85 10		sta $10				sta 	zPage0 						; save address
+.a592	84 11		sty $11				sty 	zPage0+1
+.a594	b2 10		lda ($10)			lda 	(zPage0) 					; load byte in.
+.a596	a0 00		ldy #$00			ldy 	#0
+.a598	60		rts				rts
+.a599					Memory_ReadWord:
+.a599	85 10		sta $10				sta 	zPage0 						; save address
+.a59b	84 11		sty $11				sty 	zPage0+1
+.a59d	a0 01		ldy #$01			ldy 	#1							; get high byte
+.a59f	b1 10		lda ($10),y			lda 	(zPage0),y
+.a5a1	a8		tay				tay
+.a5a2	b2 10		lda ($10)			lda 	(zPage0) 					; load low byte in.
+.a5a4	60		rts				rts
+.a5a5					Memory_WriteByte:
+.a5a5	85 10		sta $10				sta 	zPage0 						; save address
+.a5a7	84 11		sty $11				sty 	zPage0+1
+.a5a9	bd 80 05	lda $0580,x			lda 	lStack,x 					; load byte in.
+.a5ac	92 10		sta ($10)			sta 	(zPage0)					; write it.
+.a5ae	ca		dex				dex 								; throw one away
+.a5af	bd a0 05	lda $05a0,x			lda 	hStack,x					; high -> Y
+.a5b2	a8		tay				tay
+.a5b3	bd 80 05	lda $0580,x			lda 	lStack,x 					; low -> A
+.a5b6	ca		dex				dex 								; fix up stack
+.a5b7	60		rts				rts
+.a5b8					Memory_WriteWord:
+.a5b8	85 10		sta $10				sta 	zPage0 						; save address
+.a5ba	84 11		sty $11				sty 	zPage0+1
+.a5bc	bd a0 05	lda $05a0,x			lda 	hStack,x 					; load high byte in.
+.a5bf	a0 01		ldy #$01			ldy 	#1
+.a5c1	91 10		sta ($10),y			sta 	(zPage0),y					; write it.
+.a5c3	bd 80 05	lda $0580,x			lda 	lStack,x 					; load low byte in.
+.a5c6	92 10		sta ($10)			sta 	(zPage0)					; write it.
+.a5c8	ca		dex				dex 								; throw one away
+.a5c9	bd a0 05	lda $05a0,x			lda 	hStack,x					; high -> Y
+.a5cc	a8		tay				tay
+.a5cd	bd 80 05	lda $0580,x			lda 	lStack,x 					; low -> A
+.a5d0	ca		dex				dex 								; fix up stack
+.a5d1	60		rts				rts
+.a5d2					Memory_AddWord:
+.a5d2	85 10		sta $10				sta 	zPage0 						; save address
+.a5d4	84 11		sty $11				sty 	zPage0+1
+.a5d6	18		clc				clc
+.a5d7	bd 80 05	lda $0580,x			lda 	lStack,x 					; load low byte in.
+.a5da	72 10		adc ($10)			adc 	(zPage0)					; add it
+.a5dc	92 10		sta ($10)			sta 	(zPage0)					; write it.
+.a5de	a0 01		ldy #$01			ldy 	#1
+.a5e0	bd a0 05	lda $05a0,x			lda 	hStack,x 					; load high byte in.
+.a5e3	71 10		adc ($10),y			adc		(zPage0),y					; add it
+.a5e5	91 10		sta ($10),y			sta 	(zPage0),y					; write it.
+.a5e7	ca		dex				dex 								; throw one away
+.a5e8	bd a0 05	lda $05a0,x			lda 	hStack,x					; high -> Y
+.a5eb	a8		tay				tay
+.a5ec	bd 80 05	lda $0580,x			lda 	lStack,x 					; low -> A
+.a5ef	ca		dex				dex 								; fix up stack
+.a5f0	60		rts				rts
+
+;******  Return to file: main.asm
+
+
+;******  Processing file: generated/dictionary.inc
+
+.a5f1					KernelDictionary:
+>a5f1	06					.byte 6
+>a5f2	b8 a5					.word Memory_WriteWord
+>a5f4	00					.byte 0
+>a5f5	00					.byte $00
+>a5f6	a1					.byte $a1
+>a5f7	06					.byte 6
+>a5f8	e2 a4					.word Binary_Add
+>a5fa	00					.byte 0
+>a5fb	00					.byte $00
+>a5fc	ab					.byte $ab
+>a5fd	07					.byte 7
+>a5fe	d2 a5					.word Memory_AddWord
+>a600	00					.byte 0
+>a601	00					.byte $00
+>a602	2b a1					.byte $2b,$a1
+>a604	07					.byte 7
+>a605	cf a4					.word Unary_Inc1
+>a607	00					.byte 0
+>a608	00					.byte $00
+>a609	2b ab					.byte $2b,$ab
+>a60b	08					.byte 8
+>a60c	cb a4					.word Unary_Inc2
+>a60e	00					.byte 0
+>a60f	00					.byte $00
+>a610	2b 2b ab				.byte $2b,$2b,$ab
+>a613	08					.byte 8
+>a614	fb a4					.word Binary_Or
+>a616	00					.byte 0
+>a617	00					.byte $00
+>a618	2b 0f 92				.byte $2b,$0f,$92
+>a61b	06					.byte 6
+>a61c	31 a3					.word System_CompileWord
+>a61e	00					.byte 0
+>a61f	00					.byte $00
+>a620	ac					.byte $ac
+>a621	06					.byte 6
+>a622	86 a4					.word Unary_Not
+>a624	00					.byte 0
+>a625	00					.byte $00
+>a626	ad					.byte $ad
+>a627	07					.byte 7
+>a628	db a4					.word UnaryDec1
+>a62a	00					.byte 0
+>a62b	00					.byte $00
+>a62c	2d ad					.byte $2d,$ad
+>a62e	08					.byte 8
+>a62f	d4 a4					.word Unary_Dec2
+>a631	00					.byte 0
+>a632	00					.byte $00
+>a633	2d 2d ad				.byte $2d,$2d,$ad
+>a636	06					.byte 6
+>a637	3d a3					.word Constant_0
+>a639	00					.byte 0
+>a63a	00					.byte $00
+>a63b	b0					.byte $b0
+>a63c	06					.byte 6
+>a63d	4a a3					.word Constant_1
+>a63f	00					.byte 0
+>a640	00					.byte $00
+>a641	b1					.byte $b1
+>a642	07					.byte 7
+>a643	75 a4					.word Constant_minus1
+>a645	00					.byte 0
+>a646	00					.byte $00
+>a647	31 ad					.byte $31,$ad
+>a649	07					.byte 7
+>a64a	8b a3					.word Constant_10
+>a64c	00					.byte 0
+>a64d	00					.byte $00
+>a64e	31 b0					.byte $31,$b0
+>a650	08					.byte 8
+>a651	e6 a3					.word Constant_100
+>a653	00					.byte 0
+>a654	00					.byte $00
+>a655	31 30 b0				.byte $31,$30,$b0
+>a658	09					.byte 9
+>a659	34 a4					.word Constant_1024
+>a65b	00					.byte 0
+>a65c	00					.byte $00
+>a65d	31 30 32 b4				.byte $31,$30,$32,$b4
+>a661	07					.byte 7
+>a662	98 a3					.word Constant_12
+>a664	00					.byte 0
+>a665	00					.byte $00
+>a666	31 b2					.byte $31,$b2
+>a668	08					.byte 8
+>a669	f3 a3					.word Constant_127
+>a66b	00					.byte 0
+>a66c	00					.byte $00
+>a66d	31 32 b7				.byte $31,$32,$b7
+>a670	08					.byte 8
+>a671	00 a4					.word Constant_128
+>a673	00					.byte 0
+>a674	00					.byte $00
+>a675	31 32 b8				.byte $31,$32,$b8
+>a678	07					.byte 7
+>a679	a5 a3					.word Constant_14
+>a67b	00					.byte 0
+>a67c	00					.byte $00
+>a67d	31 b4					.byte $31,$b4
+>a67f	07					.byte 7
+>a680	b2 a3					.word Constant_16
+>a682	00					.byte 0
+>a683	00					.byte $00
+>a684	31 b6					.byte $31,$b6
+>a686	08					.byte 8
+>a687	a1 a4					.word Unary_Times16
+>a689	00					.byte 0
+>a68a	00					.byte $00
+>a68b	31 36 aa				.byte $31,$36,$aa
+>a68e	06					.byte 6
+>a68f	57 a3					.word Constant_2
+>a691	00					.byte 0
+>a692	00					.byte $00
+>a693	b2					.byte $b2
+>a694	07					.byte 7
+>a695	b3 a4					.word Unary_Times2
+>a697	00					.byte 0
+>a698	00					.byte $00
+>a699	32 aa					.byte $32,$aa
+>a69b	07					.byte 7
+>a69c	c2 a4					.word Unary_Div2
+>a69e	00					.byte 0
+>a69f	00					.byte $00
+>a6a0	32 af					.byte $32,$af
+>a6a2	09					.byte 9
+>a6a3	41 a4					.word Constant_2048
+>a6a5	00					.byte 0
+>a6a6	00					.byte $00
+>a6a7	32 30 34 b8				.byte $32,$30,$34,$b8
+>a6ab	07					.byte 7
+>a6ac	bf a3					.word Constant_24
+>a6ae	00					.byte 0
+>a6af	00					.byte $00
+>a6b0	32 b4					.byte $32,$b4
+>a6b2	08					.byte 8
+>a6b3	0d a4					.word Constant_255
+>a6b5	00					.byte 0
+>a6b6	00					.byte $00
+>a6b7	32 35 b5				.byte $32,$35,$b5
+>a6ba	08					.byte 8
+>a6bb	1a a4					.word Constant_256
+>a6bd	00					.byte 0
+>a6be	00					.byte $00
+>a6bf	32 35 b6				.byte $32,$35,$b6
+>a6c2	07					.byte 7
+>a6c3	cc a3					.word Constant_32
+>a6c5	00					.byte 0
+>a6c6	00					.byte $00
+>a6c7	33 b2					.byte $33,$b2
+>a6c9	0a					.byte 10
+>a6ca	5b a4					.word Constant_32767
+>a6cc	00					.byte 0
+>a6cd	00					.byte $00
+>a6ce	33 32 37 36 b7				.byte $33,$32,$37,$36,$b7
+>a6d3	0a					.byte 10
+>a6d4	68 a4					.word Constant_32768
+>a6d6	00					.byte 0
+>a6d7	00					.byte $00
+>a6d8	33 32 37 36 b8				.byte $33,$32,$37,$36,$b8
+>a6dd	06					.byte 6
+>a6de	64 a3					.word Constant_4
+>a6e0	00					.byte 0
+>a6e1	00					.byte $00
+>a6e2	b4					.byte $b4
+>a6e3	07					.byte 7
+>a6e4	ad a4					.word Unary_Times4
+>a6e6	00					.byte 0
+>a6e7	00					.byte $00
+>a6e8	34 aa					.byte $34,$aa
+>a6ea	07					.byte 7
+>a6eb	ba a4					.word Unary_Div4
+>a6ed	00					.byte 0
+>a6ee	00					.byte $00
+>a6ef	34 af					.byte $34,$af
+>a6f1	09					.byte 9
+>a6f2	4e a4					.word Constant_4096
+>a6f4	00					.byte 0
+>a6f5	00					.byte $00
+>a6f6	34 30 39 b6				.byte $34,$30,$39,$b6
+>a6fa	08					.byte 8
+>a6fb	27 a4					.word Constant_512
+>a6fd	00					.byte 0
+>a6fe	00					.byte $00
+>a6ff	35 31 b2				.byte $35,$31,$b2
+>a702	06					.byte 6
+>a703	71 a3					.word Constant_6
+>a705	00					.byte 0
+>a706	00					.byte $00
+>a707	b6					.byte $b6
+>a708	07					.byte 7
+>a709	d9 a3					.word Constant_64
+>a70b	00					.byte 0
+>a70c	00					.byte $00
+>a70d	36 b4					.byte $36,$b4
+>a70f	06					.byte 6
+>a710	7e a3					.word Constant_8
+>a712	00					.byte 0
+>a713	00					.byte $00
+>a714	b8					.byte $b8
+>a715	07					.byte 7
+>a716	a7 a4					.word Unary_Times8
+>a718	00					.byte 0
+>a719	00					.byte $00
+>a71a	38 aa					.byte $38,$aa
+>a71c	09					.byte 9
+>a71d	1c a5					.word Stack_QDup
+>a71f	00					.byte 0
+>a720	00					.byte $00
+>a721	3f 04 15 90				.byte $3f,$04,$15,$90
+>a725	06					.byte 6
+>a726	99 a5					.word Memory_ReadWord
+>a728	00					.byte 0
+>a729	00					.byte $00
+>a72a	80					.byte $80
+>a72b	08					.byte 8
+>a72c	8f a4					.word Unary_Abs
+>a72e	00					.byte 0
+>a72f	00					.byte $00
+>a730	01 02 93				.byte $01,$02,$93
+>a733	08					.byte 8
+>a734	ef a4					.word Binary_And
+>a736	00					.byte 0
+>a737	00					.byte $00
+>a738	01 0e 84				.byte $01,$0e,$84
+>a73b	0a					.byte 10
+>a73c	23 a3					.word System_Break
+>a73e	00					.byte 0
+>a73f	00					.byte $00
+>a740	02 12 05 01 8b				.byte $02,$12,$05,$01,$8b
+>a745	06					.byte 6
+>a746	16 a3					.word System_ResetStack
+>a748	00					.byte 0
+>a749	00					.byte $00
+>a74a	83					.byte $83
+>a74b	07					.byte 7
+>a74c	a5 a5					.word Memory_WriteByte
+>a74e	00					.byte 0
+>a74f	00					.byte $00
+>a750	03 a1					.byte $03,$a1
+>a752	07					.byte 7
+>a753	25 a3					.word System_CompileByte
+>a755	00					.byte 0
+>a756	00					.byte $00
+>a757	03 ac					.byte $03,$ac
+>a759	07					.byte 7
+>a75a	90 a5					.word Memory_ReadByte
+>a75c	00					.byte 0
+>a75d	00					.byte $00
+>a75e	03 80					.byte $03,$80
+>a760	09					.byte 9
+>a761	20 a3					.word System_ColdStart
+>a763	00					.byte 0
+>a764	00					.byte $00
+>a765	03 0f 0c 84				.byte $03,$0f,$0c,$84
+>a769	09					.byte 9
+>a76a	13 a5					.word Stack_Drop
+>a76c	00					.byte 0
+>a76d	00					.byte $00
+>a76e	04 12 0f 90				.byte $04,$12,$0f,$90
+>a772	08					.byte 8
+>a773	25 a5					.word Stack_Dup
+>a775	00					.byte 0
+>a776	00					.byte $00
+>a777	04 15 90				.byte $04,$15,$90
+>a77a	0b					.byte 11
+>a77b	94 a4					.word Unary_Negate
+>a77d	00					.byte 0
+>a77e	00					.byte $00
+>a77f	0e 05 07 01 14 85			.byte $0e,$05,$07,$01,$14,$85
+>a785	08					.byte 8
+>a786	30 a5					.word Stack_Nip
+>a788	00					.byte 0
+>a789	00					.byte $00
+>a78a	0e 09 90				.byte $0e,$09,$90
+>a78d	07					.byte 7
+>a78e	07 a5					.word Binary_Xor
+>a790	00					.byte 0
+>a791	00					.byte $00
+>a792	0f 92					.byte $0f,$92
+>a794	09					.byte 9
+>a795	32 a5					.word Stack_Over
+>a797	00					.byte 0
+>a798	00					.byte $00
+>a799	0f 16 05 92				.byte $0f,$16,$05,$92
+>a79d	09					.byte 9
+>a79e	75 a5					.word Stack_Pull
+>a7a0	00					.byte 0
+>a7a1	80					.byte $80
+>a7a2	10 15 0c 8c				.byte $10,$15,$0c,$8c
+>a7a6	09					.byte 9
+>a7a7	5a a5					.word Stack_Push
+>a7a9	00					.byte 0
+>a7aa	80					.byte $80
+>a7ab	10 15 13 88				.byte $10,$15,$13,$88
+>a7af	0a					.byte 10
+>a7b0	1c a3					.word System_ResetUserDictionary
+>a7b2	00					.byte 0
+>a7b3	00					.byte $00
+>a7b4	12 05 13 05 94				.byte $12,$05,$13,$05,$94
+>a7b9	09					.byte 9
+>a7ba	42 a5					.word Stack_Swap
+>a7bc	00					.byte 0
+>a7bd	00					.byte $00
+>a7be	13 17 01 90				.byte $13,$17,$01,$90
+>a7c2	00					.byte 0
+
+;******  Return to file: main.asm
+
+
+;******  End of listing

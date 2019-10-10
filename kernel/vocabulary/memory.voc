@@ -1,0 +1,91 @@
+; ******************************************************************************
+; ******************************************************************************
+;
+;		Name : 		memory.voc
+;		Purpose : 	Memory Access Functions
+;		Author : 	Paul Robson (paul@robsons.org.uk)
+;		Created : 	1st October 2019
+;
+; ******************************************************************************
+; ******************************************************************************
+
+; ******************************************************************************
+;
+;							 Memory - Read a byte
+;
+; ******************************************************************************
+
+Memory_ReadByte:	;; [c@]
+		sta 	zPage0 						; save address
+		sty 	zPage0+1
+		lda 	(zPage0) 					; load byte in.
+		ldy 	#0
+		rts
+
+; ******************************************************************************
+;
+;							 Memory - Read a word
+;
+; ******************************************************************************
+
+Memory_ReadWord:	;; [@]
+		sta 	zPage0 						; save address
+		sty 	zPage0+1
+		ldy 	#1							; get high byte
+		lda 	(zPage0),y
+		tay
+		lda 	(zPage0) 					; load low byte in.
+		rts		
+
+; ******************************************************************************
+;
+;							 Memory - Write a byte
+;
+; ******************************************************************************
+
+Memory_WriteByte:	;; [c!]
+		sta 	zPage0 						; save address
+		sty 	zPage0+1
+		lda 	lStack,x 					; load byte in.
+		sta 	(zPage0)					; write it.
+		.drop2 								; and drop the 2 stack values.
+		rts
+
+; ******************************************************************************
+;
+;							 Memory - Write a byte
+;
+; ******************************************************************************
+
+Memory_WriteWord:	;; [!]
+		sta 	zPage0 						; save address
+		sty 	zPage0+1
+		lda 	hStack,x 					; load high byte in.
+		ldy 	#1
+		sta 	(zPage0),y					; write it.
+		lda 	lStack,x 					; load low byte in.
+		sta 	(zPage0)					; write it.
+		.drop2 								; and drop the 2 stack values.
+		rts
+
+; ******************************************************************************
+;
+;							 Memory - Add a word
+;
+; ******************************************************************************
+
+Memory_AddWord:	;; [+!]
+		sta 	zPage0 						; save address
+		sty 	zPage0+1
+		
+		clc
+		lda 	lStack,x 					; load low byte in.
+		adc 	(zPage0)					; add it
+		sta 	(zPage0)					; write it.
+
+		ldy 	#1
+		lda 	hStack,x 					; load high byte in.
+		adc		(zPage0),y					; add it
+		sta 	(zPage0),y					; write it.
+		.drop2 								; and drop the 2 stack values.
+		rts

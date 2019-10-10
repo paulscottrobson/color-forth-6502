@@ -1,0 +1,75 @@
+; ******************************************************************************
+; ******************************************************************************
+;
+;		Name : 		binary.voc
+;		Purpose : 	Simple Binary Functions
+;		Author : 	Paul Robson (paul@robsons.org.uk)
+;		Created : 	1st October 2019
+;
+; ******************************************************************************
+; ******************************************************************************
+
+; ******************************************************************************
+;
+;							Add top 2 stack values
+;
+; ******************************************************************************
+
+Binary_Add:		;; [+]
+		clc
+		adc 	lStack,x 					; do the LSB
+		pha 								; save the result
+		tya 								; do the MSB 					
+		adc 	hStack,x
+		tay
+		pla 								; restore
+		dex 								; pop off the stack.
+		rts
+
+; ******************************************************************************
+;
+;							And top 2 stack values
+;
+; ******************************************************************************
+
+Binary_And:		;; [and]
+		and 	lStack,x 					; do the LSB
+		pha 								; save the result
+		tya 								; do the MSB 					
+		and 	hStack,x
+		tay
+		pla 								; restore
+		dex 								; pop off the stack.
+		rts
+
+; ******************************************************************************
+;
+;						Logical Or top 2 stack values
+;
+; ******************************************************************************
+
+Binary_Or:		;; [+or]
+		ora 	lStack,x 					; do the LSB
+		pha 								; save the result
+		tya 								; do the MSB 					
+		ora 	hStack,x
+		tay
+		pla 								; restore
+		dex 								; pop off the stack.
+		rts
+
+; ******************************************************************************
+;
+;						Exclusive Or top 2 stack values
+;
+; ******************************************************************************
+
+Binary_Xor:		;; [or]
+		eor 	lStack,x 					; do the LSB
+		pha 								; save the result
+		tya 								; do the MSB 					
+		eor 	hStack,x
+		tay
+		pla 								; restore
+		dex 								; pop off the stack.
+		rts
