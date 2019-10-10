@@ -13,4 +13,13 @@ TestBuffer:
 	 .byte $f1
 	 .byte $f7
 	 .byte $20
+	 .byte $b1
+	 .byte $b6
+	 .byte $20
+	 .byte $b4
+	 .byte $b2
+	 .byte $20
+	 .byte $b9
+	 .byte $b9
+	 .byte $20
 	 .byte $00

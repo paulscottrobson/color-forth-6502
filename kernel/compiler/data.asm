@@ -10,6 +10,7 @@
 ; ******************************************************************************
 
 STACKSIZE = 32 								; maximum data stack depth
+BUFFERSIZE = 40 							; word buffer size
 
 COL_COMMENT = $00 							; White (comment)
 COL_DEFINE = $40 							; Red (defining word)
@@ -30,21 +31,29 @@ freeCodeBank: .byte ?						; next free code byte bank (byte())
 newDictRecord: .word ? 						; address of created dictionary record.
 bufferPtr: .word ? 							; buffer pointer
 
-		* = $0580
+		* = $0800
 		
 lStack: .fill STACKSIZE						; low and high byte stack areas. Note that
 hStack: .fill STACKSIZE						; these do not have to be in page zero, it just
 											; runs quicker and occupies less space if they are.
-		* = $0600
+		* = $0A00
 
 dictAddr: .word ? 							; these are copied when a search is successful
 dictBank: .byte ? 							; (must be consecutive)
 dictType: .byte ?
 
 wordType: .byte ?							; type of word in buffer
-SearchBuffer: .fill 64 						; buffer for word
+SearchBuffer: .fill BUFFERSIZE				; buffer for word for compiler
 
 CurrentTOS: .word ? 						; current stack top value
 CurrentIndex: .byte ? 						; current index value.
 
 DefaultStackPointer: .byte ? 				; default value 6502 stack pointer.
+
+SCWidth: .byte ? 							; width
+SCHeight:.byte ?							; height
+SCX: .byte ?								; screen position
+SCY: .byte ?
+SCColour: .byte ?							; drawing colour
+
+InputBuffer: .fill BUFFERSIZE 				; input buffer

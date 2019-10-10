@@ -9,7 +9,7 @@
 ; ******************************************************************************
 ; ******************************************************************************
 
-DictionaryBase = $0810						; Dictionary address
+DictionaryBase = $1000						; Dictionary address
 CodeSpace = $2000							; Code start position.
 
 BuildAddress = $A000 						; where the binary is built

@@ -16,7 +16,7 @@
 ; ******************************************************************************
 
 System_ResetStack: ;; [c]
-		ldx 	#-2 						; reset the stack pointer
+		ldx 	#-1 						; reset the stack pointer
 		lda 	#0 							; clear the tos value held in YA
 		tay
 		rts
